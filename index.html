@@ -65,18 +65,34 @@
                 reader.onload = function(event) {
                     var csv = event.target.result;
                     try {
+                        var numberMaxScore = [];
                         var tbody = document.getElementsByTagName('tbody')[0];
                         var data = parseCSV(csv);
                         var aliasColumn = data[0].indexOf('What is your name:');
                         var scoreColumn = data[0].indexOf('Score');
 
                         for (var i = 1; i < data.length; i++) {
-                            var alias = data[i][aliasColumn].toLowerCase().trim();
+                            var alias = data[i][aliasColumn].toLowerCase().trim().replace(/[^\x00-\x7F]/g, ""); // remove non-ascii chars: emoji, etc
                             var score = data[i][scoreColumn];
+                            var number = getGradeBookNumberFromAlias(alias);
+                            var score = Math.round(eval(score)*100, 0);
+
+                            var match = numberMaxScore.find(x => x.number == number);
+                            if (!match) {
+                                numberMaxScore.push({number: number, score: score});
+                            } else {
+                                if (match.score < score) {
+                                    document.getElementById('score' + number).value = score;
+                                    numberMaxScore.push({number: number, score: score});
+                                }
+                                continue;
+                            }
+
                             var clone = document.getElementById('trTemplate').content.cloneNode(true);
                             clone.querySelector("td[data-type=alias] > input").value = alias;
-                            clone.querySelector("td[data-type=name] > select").value = getGradeBookNameFromAlias(alias);
-                            clone.querySelector("td[data-type=score] > input").value = Math.round(eval(score)*100, 0);
+                            clone.querySelector("td[data-type=name] > select").value = number;
+                            clone.querySelector("td[data-type=score] > input").value = score;
+                            clone.querySelector("td[data-type=score] > input").id = 'score' + number;
                             tbody.appendChild(clone);
                         }
 
@@ -150,7 +166,7 @@
                 return arr;
             }
         
-            function getGradeBookNameFromAlias(alias) {
+            function getGradeBookNumberFromAlias(alias) {
                 var match = aliasesAndNumbers.find(x => x.alias == alias);
                 if (match) return match.number;
                 return '';
