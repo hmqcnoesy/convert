@@ -67,7 +67,7 @@
                     try {
                         var tbody = document.getElementsByTagName('tbody')[0];
                         var data = parseCSV(csv);
-                        var aliasColumn = data[0].indexOf('What is your name: ');
+                        var aliasColumn = data[0].indexOf('What is your name:');
                         var scoreColumn = data[0].indexOf('Score');
 
                         for (var i = 1; i < data.length; i++) {
