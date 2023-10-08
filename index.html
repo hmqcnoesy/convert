@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">    
+        <title>Grade Book Converter</title>
+        <link rel="stylesheet" href="water.css">
+    </head>
+    <body>
+        <h1>Grade Book Converter</h1>
+        <p>
+            You have <span id="spanRegistrationCount" class="error">0</span> names registered here.  
+            <a href="register.html">Register names and aliases.</a>
+            <input type="file" hidden style="display:none;visibility:hidden;opacity:0;" id="inputFile" />
+        </p>
+        <p>Drop a Google Forms output CSV on this page or <a id="aFile" style="cursor:pointer">select a file</a>.</p>
+        <table>
+            <thead><tr><th>Input Name</th><th>Matched Grade Book Name</th><th>Score</th></tr></thead>
+            <tbody></tbody>
+        </table>
+
+        <template id="trTemplate">
+            <tr>
+              <td data-type="alias"><input type="text" /></td>
+              <td data-type="name"><select><option></option></select></td>
+              <td data-type="score"><input type="text" /></td>
+            </tr>
+        </template>
+        
+        <div style="text-align: right">
+            <button id="btnSave" hidden>Download CSV</button>
+        </div>
+
+        <script src="fileSaver.js"></script>
+        <script>
+            var aliasesAndNumbers = [];
+
+            document.addEventListener('DOMContentLoaded', function() {
+                var people = JSON.parse(localStorage.people);
+                document.getElementById('spanRegistrationCount').innerHTML = people.people.length;
+
+                var select = document.getElementById('trTemplate').content.querySelector('select');
+                for (var i = 0; i < people.people.length; i++) {
+                    var option = document.createElement('option');
+                    option.value = people.people[i].number;
+                    option.innerHTML = people.people[i].name;
+                    select.appendChild(option);
+
+                    var splitAliases = people.people[i].aliases.split(',');
+                    for (var j = 0; j < splitAliases.length; j++) {
+                        aliasesAndNumbers.push({alias: splitAliases[j], number: people.people[i].number});
+                    }
+                }
+            });
+
+            document.getElementById('aFile').addEventListener('click', function() {
+                document.getElementById('inputFile').click();
+            });
+            
+            document.getElementById('inputFile').addEventListener('change', function(e) {
+                var files = e.target.files; 
+                if (files.length != 1) return;
+
+                var reader = new FileReader();
+                reader.onload = function(event) {
+                    var csv = event.target.result;
+                    try {
+                        var tbody = document.getElementsByTagName('tbody')[0];
+                        var data = parseCSV(csv);
+                        var aliasColumn = data[0].indexOf('What is your name: ');
+                        var scoreColumn = data[0].indexOf('Score');
+
+                        for (var i = 1; i < data.length; i++) {
+                            var alias = data[i][aliasColumn].toLowerCase().trim();
+                            var score = data[i][scoreColumn];
+                            var clone = document.getElementById('trTemplate').content.cloneNode(true);
+                            clone.querySelector("td[data-type=alias] > input").value = alias;
+                            clone.querySelector("td[data-type=name] > select").value = getGradeBookNameFromAlias(alias);
+                            clone.querySelector("td[data-type=score] > input").value = Math.round(eval(score)*100, 0);
+                            tbody.appendChild(clone);
+                        }
+
+                        document.getElementById('btnSave').removeAttribute('hidden');
+                    } catch(ex) {
+                        alert('Failed to load: ' + ex);
+                        return;
+                    }
+                };
+                reader.readAsText(files[0]);
+            }, false);
+
+            document.getElementById('btnSave').addEventListener('click', function() {
+                if (!validateInput()) return;
+
+                var csvString = "Teacher Name:,Erin McNeil,\r\n";
+                csvString += "Class:,Language Arts 05,\r\n";
+                csvString += "Assignment Name:,Grammar 2.1.3,\r\n";
+                csvString += "Due Date:,2023-09-21,\r\n";
+                csvString += "Points Possible:,4.0,\r\n";
+                csvString += "Extra Points:,0.0,\r\n";
+                csvString += "Score Type:,PERCENT,\r\n";
+                csvString += "Student Num,Student Name,Score\r\n";
+
+                var rows = document.querySelectorAll('tbody tr');
+                for (var i = 0; i < rows.length; i++) {
+                    var selectElement = rows[i].querySelector('[data-type=name] select');
+                    csvString += selectElement.value + ",";
+                    csvString += '"' + selectElement.options[selectElement.selectedIndex].text + '",';
+                    csvString += rows[i].querySelector('[data-type=score] input').value + "\r\n";
+                }
+
+                var blob = new Blob([csvString], {type: "application/octet-stream"});
+                var date = new Date();
+                saveAs(blob, "GradeBookInput-" + date.getFullYear() + "-" + date.getMonth() + "-" + date.getDate() + ".csv");
+            });
+
+            function parseCSV(str) {
+                const arr = [];
+                let quote = false;  // 'true' means we're inside a quoted field
+
+                // Iterate over each character, keep track of current row and column (of the returned array)
+                for (let row = 0, col = 0, c = 0; c < str.length; c++) {
+                    let cc = str[c], nc = str[c+1];        // Current character, next character
+                    arr[row] = arr[row] || [];             // Create a new row if necessary
+                    arr[row][col] = arr[row][col] || '';   // Create a new column (start with empty string) if necessary
+
+                    // If the current character is a quotation mark, and we're inside a
+                    // quoted field, and the next character is also a quotation mark,
+                    // add a quotation mark to the current column and skip the next character
+                    if (cc == '"' && quote && nc == '"') { arr[row][col] += cc; ++c; continue; }
+
+                    // If it's just one quotation mark, begin/end quoted field
+                    if (cc == '"') { quote = !quote; continue; }
+
+                    // If it's a comma and we're not in a quoted field, move on to the next column
+                    if (cc == ',' && !quote) { ++col; continue; }
+
+                    // If it's a newline (CRLF) and we're not in a quoted field, skip the next character
+                    // and move on to the next row and move to column 0 of that new row
+                    if (cc == '\r' && nc == '\n' && !quote) { ++row; col = 0; ++c; continue; }
+
+                    // If it's a newline (LF or CR) and we're not in a quoted field,
+                    // move on to the next row and move to column 0 of that new row
+                    if (cc == '\n' && !quote) { ++row; col = 0; continue; }
+                    if (cc == '\r' && !quote) { ++row; col = 0; continue; }
+
+                    // Otherwise, append the current character to the current column
+                    arr[row][col] += cc;
+                }
+                return arr;
+            }
+        
+            function getGradeBookNameFromAlias(alias) {
+                var match = aliasesAndNumbers.find(x => x.alias == alias);
+                if (match) return match.number;
+                return '';
+            }
+
+            function validateInput() {
+                // todo validateInput
+                return true;
+            }
+        </script>
+    </body>
+</html>

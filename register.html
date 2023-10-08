@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">        
+        <title>Register - Grade Book Converter</title>
+        <link rel="stylesheet" href="water.css">
+    </head>
+    <body>
+        <h1>Register Names and Aliases</h1>
+        <p>Input class list using exact grade book names, with comma-separated aliases that will be used in Google Forms</p>
+        <p>For example Name: <code>Willy Wonka</code>, Aliases: <code>Willy Wonka,Willy,William,William Z. Wonka</code></p>
+        <p>To remove an entry, clear the value for both Grade Book Name and Aliases.</p>
+        <p>Use the Export/Import function for backup or to run on another computer</p>
+        <p><a href="index.html">Grade Book Converter</a></p>
+        <table>
+            <thead><tr><th>Grade Book Name</th><th>Grade Book Num</th><th>Google Form Name Alias(es)</th></tr></thead>
+            <tbody></tbody>
+        </table>
+
+        <div>
+            <button id="btnAdd" style="background-color:green">Add Row</button>
+        </div>
+
+        <hr />
+        
+        <div style="text-align: right">
+            <input type="file" hidden style="display:none;visibility:hidden;opacity:0;" id="inputFile" />
+            <button id="btnImport">Import</button>
+            <button id="btnExport">Export</button>
+            <button id="btnSave">Save Changes</button>
+        </div>
+        
+        <template id="trTemplate">
+            <tr>
+                <td data-type="name"><input type="text" /></td>
+                <td data-type="number"><input type="number" /></td>
+                <td data-type="aliases"><input type="text" style="width:100%" /></td>
+            </tr>
+        </template>
+
+        <dialog id="dialogError">
+            <header>Error</header>
+            <p>Cannot save because input failed validation</p>
+            <p id="pEmptyValueCount"><span class="error">0</span> row(s) are a missing a name or number or aliases</p>
+            <p id="pDuplicatedNames">Duplicated names: <span class="error">None</span></p>
+            <p id="pDuplicatedNumbers">Duplicated names: <span class="error">None</span></p>
+            <p id="pDuplicatedAliases">Duplicated aliases: <span class="error">None</span></p>
+            <form method="dialog"><button>OK</button></form>
+        </dialog>
+
+        <dialog id="dialogSuccess">
+            <header>Success</header>
+            <p>Saved!</p>
+            <form method="dialog">
+                <button value="register.html">Stay on registration</button>
+                <button value="index.html">Go to converter</button>
+            </form>
+        </dialog>
+
+        <dialog id="dialogWarning">
+            <header>Warning</header>
+            <p>This will overwrite and save over any existing rows on this page.</p>
+            <p>Continue?</p>
+            <form method="dialog">
+                <button value="ok">OK</button>
+                <button value="cancel">Cancel</button>
+            </form>
+        </dialog>
+
+        <script src="fileSaver.js"></script>
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                var people = JSON.parse(localStorage.people);
+                var tbody = document.getElementsByTagName('tbody')[0];
+
+                for (var i = 0; i < people.people.length; i++) {
+                    var clone = document.getElementById('trTemplate').content.cloneNode(true);
+                    clone.querySelector("td[data-type=name] > input").value = people.people[i].name;
+                    clone.querySelector("td[data-type=number] > input").value = people.people[i].number;
+                    clone.querySelector("td[data-type=aliases] > input").value = people.people[i].aliases;
+                    tbody.appendChild(clone);
+                }
+            });
+
+            document.getElementById('btnAdd').addEventListener('click', function() {
+                var clone = document.getElementById('trTemplate').content.cloneNode(true);
+                document.getElementsByTagName('tbody')[0].appendChild(clone);
+                var allRows = document.querySelectorAll('tbody tr');
+                allRows[allRows.length - 1].querySelector('input').focus();
+            });
+
+            document.getElementById('btnImport').addEventListener('click', function() {
+                document.getElementById("dialogWarning").showModal();
+            });
+
+            document.getElementById('dialogWarning').addEventListener('close', function(e) {
+                if (e.target.returnValue == "ok") document.getElementById('inputFile').click();
+            });
+
+            document.getElementById('inputFile').addEventListener('change', function(e) {
+                var files = e.target.files; 
+                if (files.length != 1) return;
+
+                var reader = new FileReader();
+                reader.onload = function(event) {
+                    var json = event.target.result;
+                    try {
+                        var data = JSON.parse(json);
+                        if (!data.people) {
+                            throw new Error('No root people array.  Must have format {"people": [{"name":"John Doe","number":1234567890,"aliases":"John,Johnny"},...]}');
+                        }
+                        
+                        var tbody = document.getElementsByTagName('tbody')[0];
+                        tbody.innerHTML = '';
+                        
+                        for (var i = 0; i < data.people.length; i++) {
+                            var clone = document.getElementById('trTemplate').content.cloneNode(true);
+                            clone.querySelector("td[data-type=name] > input").value = data.people[i].name;
+                            clone.querySelector("td[data-type=number] > input").value = data.people[i].number;
+                            clone.querySelector("td[data-type=aliases] > input").value = data.people[i].aliases;
+                            tbody.appendChild(clone);
+                        }
+
+                        document.getElementById('btnSave').click();
+                    } catch(ex) {
+                        alert('Failed to import: ' + ex);
+                        return;
+                    }
+                };
+                reader.readAsText(files[0]);
+            }, false);
+
+            document.getElementById('btnExport').addEventListener('click', function() {
+                var people = getPeopleFromInput();
+
+                if (!validateInput(people.people)) return;
+
+                var blob = new Blob([JSON.stringify(people)], {type: "application/octet-stream"});
+                saveAs(blob, 'Converter registered names.json');
+            });
+
+            document.getElementById('btnSave').addEventListener('click', function() {
+                var people = getPeopleFromInput();
+
+                if (!validateInput(people.people)) return;
+                
+                localStorage.people = JSON.stringify(people);
+
+                document.getElementById("dialogSuccess").showModal();
+            });
+
+            document.getElementById('dialogSuccess').addEventListener('close', function(e) {
+                window.location.href = e.target.returnValue;
+            });
+
+            function getPeopleFromInput() {
+                var rows = document.querySelectorAll('tbody > tr');
+                var people = {people: []};
+                for (var i = 0; i < rows.length; i++) {
+                    var name = rows[i].querySelector('td[data-type=name] > input').value;
+                    var number = rows[i].querySelector('td[data-type=number] > input').value;
+                    var aliases = rows[i].querySelector('td[data-type=aliases] > input').value;
+                    
+                    if (name || number || aliases) people.people.push({name: name, number: number, aliases: aliases});
+                }
+
+                return people;
+            }
+
+            function validateInput(people) {
+                var allNames = [];
+                var duplicateNames = [];
+
+                var allNumbers = [];
+                var duplicateNumbers = [];
+
+                var allAliases = [];
+                var duplicateAliases = [];
+
+                var emptyValueCount = 0;
+
+                for (var i = 0; i < people.length; i++) {
+                    var name = people[i].name.toLowerCase().trim();
+                    if (allNames.indexOf(name) > -1) {
+                        duplicateNames.push(people[i].name);
+                    } else {
+                        allNames.push(name);
+                    }
+                    
+                    var number = people[i].number;
+                    if (allNumbers.indexOf(number) > -1) {
+                        duplicateNumbers.push(people[i].number);
+                    } else {
+                        allNumbers.push(number);
+                    }
+
+                    var aliases = people[i].aliases;
+                    var splitAliases = aliases.split(',');
+                    for (var j = 0; j < splitAliases.length; j++) {
+                        var alias = splitAliases[j].toLowerCase().trim();
+                        if (allAliases.indexOf(alias) > -1) {
+                            duplicateAliases.push(splitAliases[j]);
+                        } else {
+                            allAliases.push(alias);
+                        }
+                    }
+
+                    if ((!name || !number || !aliases) && !(!name && !number && !aliases)) {
+                        emptyValueCount++;
+                    }
+                }                    
+
+                if (duplicateNames.length > 0 || duplicateNumbers.length > 0 || duplicateAliases.length > 0 || emptyValueCount > 0) {
+                    var pEmptyValue = document.getElementById('pEmptyValueCount');
+                    if (emptyValueCount > 0) {
+                        pEmptyValue.querySelector('span').innerHTML = emptyValueCount;
+                        pEmptyValue.style.display = 'block';
+                    } else {
+                        pEmptyValue.style.display = 'none';
+                    }
+
+                    var pDuplicatedAliases = document.getElementById('pDuplicatedAliases');
+                    if (duplicateAliases.length > 0) {
+                        pDuplicatedAliases.querySelector('span').innerHTML = duplicateAliases;
+                        pDuplicatedAliases.style.display = 'block';
+                    } else {
+                        pDuplicatedAliases.style.display = 'none';
+                    }
+
+                    var pDuplicatedNumbers = document.getElementById('pDuplicatedNumbers');
+                    if (duplicateNumbers.length > 0) {
+                        pDuplicatedNumbers.querySelector('span').innerHTML = duplicateNumbers;
+                        pDuplicatedNumbers.style.display = 'block';
+                    } else {
+                        pDuplicatedNumbers.style.display = 'none';
+                    }
+
+                    var pDuplicatedNames = document.getElementById('pDuplicatedNames');
+                    if (duplicateNames.length > 0) {
+                        pDuplicatedNames.querySelector('span').innerHTML = duplicateNames;
+                        pDuplicatedNames.style.display = 'block';
+                    } else {
+                        pDuplicatedNames.style.display = 'none';
+                    }
+
+                    document.getElementById("dialogError").showModal();
+                    return false;
+                }
+
+                return true;
+            }
+        </script>
+    </body>
+</html>
